@@ -74,12 +74,15 @@ class EcsEventCollector:
         # Wait for first iteration
         sleep(soff.total_seconds())
 
-        scheduler = schedule.every(self.period).minutes.do(self.job)
+        job = schedule.every(self.period).minutes.do(self.job)
+
+        # Do the first run
+        schedule.run_all()
 
         while True:
-            print "Next run at %s" % scheduler.next_run()
-            sleep(scheduler.idle_seconds()+1)
-            scheduler.run_pending()
+            print "Next run at %s" % job.next_run
+            sleep(schedule.idle_seconds()+1)
+            schedule.run_pending()
 
     def job(self):
         print "Job running..."
