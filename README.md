@@ -23,7 +23,7 @@ The following properties are optional:
 * mailserver: If specified, the mail server to use for sending email.  Defaults to localhost.
 * subject: If specified, the subject of the email.  Defaults to `ECS Audit Event Report for yyyy-MM-dd`.
 * s3bucket: If specified, upload the report to the given S3 bucket.
-* s3endpoint: The S3 endpoint to connect to.  Defaults to https://s3.amazonaws.com
+* s3endpoint: The S3 endpoint to connect to. 
 * s3accesskey: The S3 access key (user)
 * s3secretkey: The S3 secret key.  On first execution, the secret key will be obfuscated and written back to the file so it's not in plain text.
 * s3prefix: If specified, the prefix in the bucket to upload the reports to.

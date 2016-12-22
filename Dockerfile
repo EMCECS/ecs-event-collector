@@ -1,6 +1,6 @@
 FROM python:2-alpine
 
-RUN pip install ecscli
+RUN pip install ecscli schedule PyYAML
 
 ADD main.py /main/
 
