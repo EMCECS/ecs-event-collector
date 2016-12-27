@@ -5,10 +5,14 @@ them to an S3 bucket for auditing purposes.
 """
 
 import os
+import sys
 import yaml
 import schedule
 import ecscli
-from datetime import datetime, time, timedelta, date
+from requests import Request, Session
+import pytz
+import tzlocal
+from datetime import datetime, time, timedelta, date, tzinfo
 from time import sleep
 
 CONFIG_FILE = "/etc/ecs-event-collector/config.yaml"
@@ -87,9 +91,82 @@ class EcsEventCollector:
     def job(self):
         print "Job running..."
 
+        data_format = self.report_format
+        if FORMAT_HTML == self.report_format:
+            # We will use XSLT to generate the report, so get the data in XML format
+            data_format = FORMAT_XML
 
+        # get local timezone
+        local_tz = tzlocal.get_localzone()
 
-print "Hello World!"
+        # Midnight in current TZ.
+        today_ts = datetime.combine(datetime.today(), time())
+        today_ts = local_tz.localize(today_ts)
+        end_ts = self.format_iso_datetime(today_ts)
+        start_ts = self.format_iso_datetime(today_ts - timedelta(days=1))
+
+        print "Generating report from %s to %s" % (start_ts, end_ts)
+
+        data = self.get_data(start_ts, end_ts, data_format)
+
+    def format_iso_datetime(self, dt):
+        dt = dt.astimezone(pytz.utc)
+        formatted = dt.isoformat()
+        # Make +00:00 into 'Z'
+        return formatted.replace("+00:00", "Z")
+
+    def get_data(self, start_ts, end_ts, data_format):
+        session = Session()
+        token = self.login(session)
+        print "Got token %s" % token
+
+        url = "https://%s:%d/vdc/events" % (self.host, self.port)
+        params = {'start_time': start_ts, 'end_time': end_ts}
+        headers = {"X-SDS-AUTH-TOKEN": token}
+        if data_format == 'XML':
+            headers['Accept'] = "application/xml"
+        else:
+            headers['Accept'] = "application/json"
+        request = Request('GET', url, params=params, headers=headers)
+
+        print "Request: %s" % request
+
+        response = self.retry_request(session, request.prepare())
+
+        print "Response: %s" % response.text
+
+        # TODO: handle pagination for lots of events.
+
+        try:
+            self.logout(session, token)
+        except Exception as e:
+            # Ignore
+            print "Error logging out (ignored): %s" % e.message
+
+    def login(self, session):
+        url = "https://%s:%d/login" % (self.host, self.port)
+        request = Request('GET', url, auth=(self.user, self.password))
+        response = self.retry_request(session, request.prepare())
+
+        return response.headers["X-SDS-AUTH-TOKEN"]
+
+    def retry_request(self, session, request, max_retries=3):
+        while max_retries > 0:
+            response = session.send(request, timeout=300, verify=False)
+            if response.status_code < 299:
+                return response
+            else:
+                print "HTTP %d: %s" % (response.status_code, response.reason)
+                max_retries -= 1
+
+        raise Exception("Failed to execute %s, max retries exceeded." % request)
+
+    def logout(self, session, token):
+        url = "https://%s:%d/logout" % (self.host, self.port)
+        headers = {"X-SDS-AUTH-TOKEN": token}
+        request = Request('GET', url, headers=headers)
+
+        self.retry_request(session, request.prepare())
 
 # Read settings -- must be mapped into /etc/ecs-event-collector/config.yaml
 
@@ -157,4 +234,8 @@ if not (collector.use_s3 or collector.use_mail):
     raise Exception("You need to configure at least one destination: email or S3!")
 
 # Go!
-collector.run()
+if len(sys.argv) > 1 and sys.argv[1] == "test":
+    # Test mode... just run once and exit.
+    collector.job()
+else:
+    collector.run()
